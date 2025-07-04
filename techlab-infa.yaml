@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: '2025-07-04'
+Description: TechLab Free-Tier VPC + EC2 Infra
+
+Parameters:
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: SSH key pair name for your instances
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: TechLab-VPC }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: TechLab-IGW }]
+
+  AttachIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: [{ Key: Name, Value: Public-RT }]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachIGW
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  WebFrontendSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: Web-Frontend }]
+
+  WebBackendSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: Web-Backend }]
+
+  CorpServerSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true   # or false if you prefer EIP
+      Tags: [{ Key: Name, Value: Corp-Server }]
+
+  # Associate subnets with the public route table
+  FrontendRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref WebFrontendSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  BackendRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref WebBackendSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  CorpRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CorpServerSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  DevSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Dev-Allow-All
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      Tags: [{ Key: Name, Value: Dev-Allow-All }]
+
+  # Example: Linux EC2 for Frontend
+  WebFrontendInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairName
+      ImageId: ami-0c02fb55956c7d316   # Amazon Linux 2023 in us-east-2
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref WebFrontendSubnet
+          GroupSet: [!Ref DevSecurityGroup]
+      Tags:
+        - Key: Name
+          Value: Web-Frontend
+
+  # (Repeat blocks for WebBackendInstance and CorpServerInstance, changing AMI, subnet, tags)
